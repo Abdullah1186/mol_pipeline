@@ -1,0 +1,286 @@
+{
+  "run_id": "20260523-220615",
+  "params_hash": "45a135027f61",
+  "records": [
+    {
+      "step": "load_db",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570375.646786,
+      "duration_ms": 2325.3531455993652,
+      "n_in": null,
+      "n_out": 19900,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_before",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570377.972579,
+      "duration_ms": 234.80796813964844,
+      "n_in": 19900,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "evaluate",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570378.207617,
+      "duration_ms": 43362.480878829956,
+      "n_in": 19900,
+      "n_out": 15245,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_after",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570421.570415,
+      "duration_ms": 183.03608894348145,
+      "n_in": 15245,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "filter_odd_e",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570421.7537339,
+      "duration_ms": 0.00095367431640625,
+      "n_in": 15245,
+      "n_out": 15245,
+      "extras": {}
+    },
+    {
+      "step": "write_db",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570421.753891,
+      "duration_ms": 11463.46402168274,
+      "n_in": 15245,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "write_metrics",
+      "dataset": "qm9",
+      "model": "Gschnet",
+      "started_at": 1779570433.21757,
+      "duration_ms": 0.36978721618652344,
+      "n_in": null,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "load_db",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570433.227494,
+      "duration_ms": 2319.3130493164062,
+      "n_in": null,
+      "n_out": 20000,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_before",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570435.547094,
+      "duration_ms": 225.77404975891113,
+      "n_in": 20000,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "evaluate",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570435.773162,
+      "duration_ms": 42041.63408279419,
+      "n_in": 20000,
+      "n_out": 18004,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_after",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570477.815188,
+      "duration_ms": 205.11317253112793,
+      "n_in": 18004,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "filter_odd_e",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570478.020641,
+      "duration_ms": 0.0019073486328125,
+      "n_in": 18004,
+      "n_out": 18004,
+      "extras": {}
+    },
+    {
+      "step": "write_db",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570478.020854,
+      "duration_ms": 14732.762813568115,
+      "n_in": 18004,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "write_metrics",
+      "dataset": "qm9",
+      "model": "EDM",
+      "started_at": 1779570492.7539022,
+      "duration_ms": 3.2927989959716797,
+      "n_in": null,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "load_db",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570492.765661,
+      "duration_ms": 2445.5578327178955,
+      "n_in": null,
+      "n_out": 20000,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_before",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570495.2116249,
+      "duration_ms": 235.65435409545898,
+      "n_in": 20000,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "evaluate",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570495.4476302,
+      "duration_ms": 44794.2578792572,
+      "n_in": 20000,
+      "n_out": 18040,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_after",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570540.242524,
+      "duration_ms": 220.1390266418457,
+      "n_in": 18040,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "filter_odd_e",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570540.463084,
+      "duration_ms": 0.0030994415283203125,
+      "n_in": 18040,
+      "n_out": 18040,
+      "extras": {}
+    },
+    {
+      "step": "write_db",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570540.463372,
+      "duration_ms": 15831.964015960693,
+      "n_in": 18040,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "write_metrics",
+      "dataset": "qm9",
+      "model": "GeoLDM",
+      "started_at": 1779570556.295694,
+      "duration_ms": 3.192901611328125,
+      "n_in": null,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "load_db",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570556.3072572,
+      "duration_ms": 2548.4726428985596,
+      "n_in": null,
+      "n_out": 20000,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_before",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570558.856179,
+      "duration_ms": 227.01311111450195,
+      "n_in": 20000,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "evaluate",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570559.083628,
+      "duration_ms": 41984.83991622925,
+      "n_in": 20000,
+      "n_out": 18071,
+      "extras": {}
+    },
+    {
+      "step": "scan_odd_e_after",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570601.0689762,
+      "duration_ms": 205.3067684173584,
+      "n_in": 18071,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "filter_odd_e",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570601.274752,
+      "duration_ms": 0.0021457672119140625,
+      "n_in": 18071,
+      "n_out": 18071,
+      "extras": {}
+    },
+    {
+      "step": "write_db",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570601.2750862,
+      "duration_ms": 13878.042697906494,
+      "n_in": 18071,
+      "n_out": null,
+      "extras": {}
+    },
+    {
+      "step": "write_metrics",
+      "dataset": "qm9",
+      "model": "JODO",
+      "started_at": 1779570615.1535401,
+      "duration_ms": 1.0058879852294922,
+      "n_in": null,
+      "n_out": null,
+      "extras": {}
+    }
+  ]
+}
