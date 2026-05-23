@@ -7,11 +7,14 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Pipeline outputs (CLI runs land at repo root; baselines/ stays tracked)
+# Pipeline outputs (CLI runs land at repo root)
 /artifacts/
 /molecular_metrics.csv
 /*_filtered.db
 /*_filtered_odd_e.db
+
+# Baseline reference data: keep the small CSVs tracked, ignore the heavy .db files
+baselines/*.db
 
 # Streamlit
 .streamlit/
