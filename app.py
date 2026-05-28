@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Iterable
 
 UPLOADS_ROOT = Path(".uploads")  # repo-local, gitignored
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB per file (deployed instance is RAM-constrained)
 
 import pandas as pd
 import streamlit as st
@@ -101,6 +102,12 @@ uploaded = st.file_uploader(
 if uploaded:
     for f in uploaded:
         if f.name in st.session_state.rows:
+            continue
+        if f.size > MAX_UPLOAD_BYTES:
+            st.error(
+                f"{f.name} is {f.size / 1024 / 1024:.0f} MB — over the "
+                f"{MAX_UPLOAD_BYTES // 1024 // 1024} MB per-file limit."
+            )
             continue
         dest = st.session_state.session_dir / f.name
         dest.write_bytes(f.getbuffer())

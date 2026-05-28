@@ -1,0 +1,25 @@
+# Don't bake local state into the image.
+.git
+.gitignore
+.vscode
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+
+# Local UI uploads + pipeline outputs
+.uploads
+artifacts
+molecular_metrics.csv
+*_filtered_*.db
+*_filtered.db
+*_filtered_odd_e.db
+
+# Baseline DBs (big, gitignored anyway) — CSVs in baselines/ are kept
+baselines/*.db
+
+# Plans / notes
+.claude
+
+# macOS
+.DS_Store

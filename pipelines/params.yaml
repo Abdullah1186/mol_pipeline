@@ -1,4 +1,7 @@
-# Pipeline parameters. Edit this file — not Python code — to change behavior.
+# Pipeline parameters for LOCAL CLI runs (`python -m pipelines.runner`).
+# The deployed Streamlit UI does NOT read this file — it builds Params at
+# runtime from widget state. The `inputs:` paths below are absolute paths
+# on the author's laptop and will not exist inside the container.
 
 # Which filters to AND together when deciding which molecules survive.
 #   valid          - keep only RDKit-sanitisable molecules
