@@ -18,7 +18,7 @@ from .base import Step
 
 
 COLUMNS = [
-    "Dataset", "Source",
+    "Dataset", "Source", "Filters_applied",
     "Total", "Odd_e_before_filtering_VUN",
     "Valid", "Validity", "Unique", "Uniqueness", "Novel", "Novelty",
     "Odd_e_after_filtering_VUN", "Final_after_odd_e_filter",
@@ -31,7 +31,7 @@ class WriteMetrics(Step):
         "total", "odd_before",
         "valid_count", "validity", "unique_count", "uniqueness",
         "novel_count", "novelty",
-        "odd_after", "final_kept",
+        "odd_after", "final_kept", "filters_applied",
     )
     outputs = ("csv_path",)
 
@@ -40,7 +40,7 @@ class WriteMetrics(Step):
         with open(path, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
-                ctx.input.dataset, ctx.input.name,
+                ctx.input.dataset, ctx.input.name, inputs["filters_applied"],
                 inputs["total"], inputs["odd_before"],
                 inputs["valid_count"], inputs["validity"],
                 inputs["unique_count"], inputs["uniqueness"],

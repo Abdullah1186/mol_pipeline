@@ -13,6 +13,7 @@ __pycache__/
 # Pipeline outputs (CLI runs land at repo root)
 /artifacts/
 /molecular_metrics.csv
+/*_filtered**
 /*_filtered.db
 /*_filtered_odd_e.db
 
@@ -21,3 +22,6 @@ baselines/*.db
 
 # Streamlit
 .streamlit/
+
+# User-uploaded DBs via the Streamlit UI (one subdir per session)
+/.uploads/

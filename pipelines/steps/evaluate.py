@@ -1,15 +1,11 @@
-"""Evaluate: validity, uniqueness, novelty + which molecules survive.
+"""Evaluate: V/U/N measurement + per-molecule filter flags.
 
-Wraps the body of filter.py:87-117. Does two things the old code did
-inline:
-  1. Calls BasicMolecularMetrics.evaluate() for the V/U/N metrics.
-  2. Reproduces filter.py's DB_smiles -> keep_index logic so downstream
-     steps get a smaller `kept_molecules` / `kept_source_ids` list.
+Splits the old keep-set logic in two:
+  - measurement (validity / uniqueness / novelty) stays here and always runs
+  - per-molecule masks (`is_valid`, `is_unique`) are emitted as outputs so
+    a downstream `ApplyFilters` step can AND user-selected criteria
 
-We keep the original DB_smiles build (largest-fragment SMILES) even
-though BasicMolecularMetrics.evaluate computes SMILES internally — the
-old code did both, and the keep_index mapping uses the largest-frag
-version. Behavior must match.
+This step never drops anything itself. That's `ApplyFilters`' job.
 """
 
 from __future__ import annotations
@@ -31,13 +27,13 @@ class Evaluate(Step):
     outputs = (
         "validity", "uniqueness", "novelty",
         "valid_count", "unique_count", "novel_count",
-        "kept_molecules", "kept_source_ids",
+        "is_valid", "is_unique",
     )
 
     def run(self, ctx: RunContext, *, molecules, source_ids, **_: Any) -> dict[str, Any]:
         info = info_for(ctx.input.dataset)
 
-        # Largest-fragment SMILES per molecule (filter.py:88-96)
+        # Largest-fragment SMILES per molecule (None if invalid).
         db_smiles: list[str | None] = []
         for positions, atom_types in molecules:
             mol = build_molecule(positions, atom_types, info)
@@ -49,21 +45,21 @@ class Evaluate(Step):
             db_smiles.append(smi)
 
         metrics = BasicMolecularMetrics(info)
-        (validity, uniqueness, novelty), unique_smiles, _novel_smiles, stats = metrics.evaluate(
+        (validity, uniqueness, novelty), _, _, stats = metrics.evaluate(
             molecules, check_odd_e=False
         )
 
-        # Map unique SMILES back to molecule indices (filter.py:109-117).
-        # Note: dict-comprehension dedup keeps the LAST index per smile,
-        # matching filter.py exactly.
-        kept_mols = []
-        kept_ids = []
-        if unique_smiles:
-            smiles_to_index = {s: i for i, s in enumerate(db_smiles) if s is not None}
-            keep_index = {smiles_to_index[s] for s in unique_smiles if s in smiles_to_index}
-            for idx in keep_index:
-                kept_mols.append(molecules[idx])
-                kept_ids.append(source_ids[idx])
+        is_valid: list[bool] = [s is not None for s in db_smiles]
+
+        # Uniqueness mask: mark the LAST index per SMILES as the survivor
+        # (matches the dict-comprehension semantics in old filter.py:109-113,
+        # which the existing baselines were captured against).
+        last_index_per_smiles: dict[str, int] = {}
+        for i, s in enumerate(db_smiles):
+            if s is not None:
+                last_index_per_smiles[s] = i
+        survivors = set(last_index_per_smiles.values())
+        is_unique: list[bool] = [i in survivors for i in range(len(molecules))]
 
         return {
             "validity": validity,
@@ -72,6 +68,6 @@ class Evaluate(Step):
             "valid_count": stats.get("valid", 0),
             "unique_count": stats.get("unique", 0),
             "novel_count": stats.get("novel", 0),
-            "kept_molecules": kept_mols,
-            "kept_source_ids": kept_ids,
+            "is_valid": is_valid,
+            "is_unique": is_unique,
         }

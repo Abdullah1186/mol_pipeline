@@ -1,5 +1,5 @@
-Dataset,Source,Total,Odd_e_before_filtering_VUN,Valid,Validity,Unique,Uniqueness,Novel,Novelty,Odd_e_after_filtering_VUN,Final_after_odd_e_filter
-qm9,Gschnet_qm9,19900,4076,17084,0.8584924623115577,15245,0.8923554202762819,0,0.0,2323,12922
-qm9,EDM_qm9,20000,2516,18516,0.9258,18004,0.972348239360553,0,0.0,1571,16433
-qm9,GeoLDM_qm9,20000,921,18750,0.9375,18040,0.9621333333333333,0,0.0,419,17621
-qm9,JODO_qm9,20000,257,19247,0.96235,18071,0.9388995687639632,0,0.0,116,17955
+Dataset,Source,Filters_applied,Total,Odd_e_before_filtering_VUN,Valid,Validity,Unique,Uniqueness,Novel,Novelty,Odd_e_after_filtering_VUN,Final_after_odd_e_filter
+qm9,Gschnet_qm9,"valid,unique,even_e",19900,4076,17084,0.8584924623115577,15245,0.8923554202762819,0,0.0,0,12922
+qm9,EDM_qm9,"valid,unique,even_e",20000,2516,18516,0.9258,18004,0.972348239360553,0,0.0,0,16433
+qm9,GeoLDM_qm9,"valid,unique,even_e",20000,921,18750,0.9375,18040,0.9621333333333333,0,0.0,0,17621
+qm9,JODO_qm9,"valid,unique,even_e",20000,257,19247,0.96235,18071,0.9388995687639632,0,0.0,0,17955

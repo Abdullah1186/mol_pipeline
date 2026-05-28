@@ -26,7 +26,7 @@ class WriteDB(Step):
             return {"output_path": None}
 
         out_name = catalog.filtered_db_name(
-            ctx.input.name, filter_odd_e=ctx.params.filter_odd_e
+            ctx.input.name, filters=ctx.params.filters
         )
         out_path = Path(ctx.params.output_dir) / out_name
 

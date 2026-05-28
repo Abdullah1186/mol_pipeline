@@ -1,20 +1,21 @@
 # Pipeline parameters. Edit this file — not Python code — to change behavior.
 
-# Drop odd-electron molecules from the final kept set?
-filter_odd_e: false
+# Which filters to AND together when deciding which molecules survive.
+#   valid          - keep only RDKit-sanitisable molecules
+#   unique         - keep first occurrence per SMILES (requires valid)
+#   even_electrons - drop molecules with odd total electron count
+filters:
+  valid: true
+  unique: true
+  even_electrons: false
 
-# Which source DBs to process. Each entry:
-#   path:    absolute path to an ASE .db
-#   dataset: 'qm9' or 'drugs' — picks atom encoder + odd-e atomic-number table
-#   name:    label used in the CSV 'Source' column and in output filenames
-#            (e.g. name=EDM_qm9 -> output EDM_qm9_filtered.db)
+# Source DBs to process.
 inputs:
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/Gschnet_qm9.db, dataset: qm9, name: Gschnet_qm9 }
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/EDM_qm9.db,     dataset: qm9, name: EDM_qm9 }
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/GeoLDM_qm9.db,  dataset: qm9, name: GeoLDM_qm9 }
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/JODO_qm9_raw.db, dataset: qm9, name: JODO_qm9 }
 
-# Where outputs land.
 output_dir: .
 metrics_csv: molecular_metrics.csv
 artifacts_dir: artifacts
