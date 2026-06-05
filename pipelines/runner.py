@@ -26,7 +26,9 @@ from .steps.evaluate import Evaluate
 from .steps.load_db import LoadDB
 from .steps.scan_odd_e import ScanOddE
 from .steps.write_db import WriteDB
+from .steps.write_jsons import WriteJSONs
 from .steps.write_metrics import WriteMetrics, write_header
+from . import catalog
 
 
 def _run_pair(ctx: RunContext) -> None:
@@ -36,6 +38,11 @@ def _run_pair(ctx: RunContext) -> None:
     # 1. load
     bag.update(LoadDB().execute(ctx))
     total = len(bag["molecules"])
+
+    # 1b. smiles + ecomp JSONs for the raw molecule set
+    WriteJSONs("raw", basename=f"{ctx.input.name}_raw").execute(
+        ctx, molecules=bag["molecules"]
+    )
 
     # 2. odd-e scan on raw
     odd_before = ScanOddE("before").execute(ctx, molecules=bag["molecules"])["odd_count"]
@@ -57,8 +64,15 @@ def _run_pair(ctx: RunContext) -> None:
         ctx, molecules=bag["kept_molecules"]
     )["odd_count"]
 
-    # 6. write filtered DB
+    # 6. write filtered DB + filtered JSONs (basename matches the .db stem
+    # so the three files sit side by side: <name>_filtered_VU.{db,smiles.json,ecomp.json})
     WriteDB().execute(ctx, kept_source_ids=bag["kept_source_ids"])
+    filtered_basename = Path(
+        catalog.filtered_db_name(ctx.input.name, filters=ctx.params.filters)
+    ).stem
+    WriteJSONs("filtered", basename=filtered_basename).execute(
+        ctx, molecules=bag["kept_molecules"]
+    )
 
     # 7. append CSV row
     WriteMetrics().execute(
@@ -88,6 +102,10 @@ def run(params: Params) -> Manifest:
         artifacts_dir=Path(params.artifacts_dir),
     )
     print(f"run_id={run_id}  params_hash={params.hash()}  n_inputs={len(params.inputs)}")
+
+    # Make sure output_dir + metrics_csv parent exist before any step runs.
+    Path(params.output_dir).mkdir(parents=True, exist_ok=True)
+    Path(params.metrics_csv).parent.mkdir(parents=True, exist_ok=True)
 
     # CSV header written once per run (matches old filter.py:18-25 — 'w' mode wipes existing)
     write_header(params.metrics_csv)

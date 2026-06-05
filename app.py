@@ -21,26 +21,16 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Iterable
 
 UPLOADS_ROOT = Path(".uploads")  # repo-local, gitignored
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB per file (deployed instance is RAM-constrained)
 
 import pandas as pd
 import streamlit as st
-from matplotlib.figure import Figure
 
-from pipelines import catalog
 from pipelines.config import FilterFlags, Input, Params
-from pipelines.datasets import info_for
 from pipelines.runner import run as run_pipeline
-from pipelines.steps.load_db import LoadDB
-from pipelines.context import RunContext
-from pipelines.manifest import Manifest, new_run_id
-from plots.registry import PLOTS
-
-
-RAW = FilterFlags(valid=False, unique=False, even_electrons=False)  # sentinel for "no filter at all"
+from plots.ecomp_bar import bar_average_proportion
 
 
 st.set_page_config(page_title="Molecule Pipeline", layout="wide")
@@ -57,12 +47,6 @@ if "session_dir" not in st.session_state:
     st.session_state.session_id = uuid.uuid4().hex[:8]
     st.session_state.session_dir = UPLOADS_ROOT / st.session_state.session_id
     st.session_state.session_dir.mkdir(exist_ok=True)
-if "mol_cache" not in st.session_state:
-    # (db_path, filter_odd_e) -> list[(positions, atom_types)]
-    # filter_odd_e=None means "raw, no filter".
-    st.session_state.mol_cache = {}
-if "last_figures" not in st.session_state:
-    st.session_state.last_figures = []        # list[(plot_name, Figure)]
 if "last_filter_run" not in st.session_state:
     st.session_state.last_filter_run = None   # dict: csv_path, manifest_path, output_dir
 
@@ -72,8 +56,6 @@ def _wipe_session() -> None:
     shutil.rmtree(st.session_state.session_dir, ignore_errors=True)
     st.session_state.session_dir.mkdir(parents=True, exist_ok=True)
     st.session_state.rows = {}
-    st.session_state.mol_cache = {}
-    st.session_state.last_figures = []
     st.session_state.last_filter_run = None
 
 
@@ -152,63 +134,6 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Helpers: load raw mols / filtered mols, both cached in session_state.
-# Defined before section 3 so the filter-section cache-seeding can call them.
-# ---------------------------------------------------------------------------
-def _load_raw(path: Path, dataset: str, name: str) -> list:
-    """Load all molecules from a DB, cached by path. Cache key uses RAW sentinel."""
-    key = (str(path), RAW)
-    if key not in st.session_state.mol_cache:
-        inp = Input(path=str(path), dataset=dataset, name=name)
-        run_id = new_run_id()
-        manifest = Manifest(
-            run_id=run_id,
-            params_hash="ui",
-            artifacts_dir=Path(st.session_state.session_dir) / "artifacts",
-        )
-        params = Params(
-            filters=RAW, inputs=(inp,),
-            output_dir=str(st.session_state.session_dir),
-            metrics_csv=str(st.session_state.session_dir / "metrics_unused.csv"),
-            artifacts_dir=str(st.session_state.session_dir / "artifacts"),
-        )
-        ctx = RunContext(run_id=run_id, params=params, manifest=manifest, input=inp)
-        out = LoadDB().execute(ctx)
-        st.session_state.mol_cache[key] = out["molecules"]
-    return st.session_state.mol_cache[key]
-
-
-def _load_filtered(rows: Iterable[dict], filters: FilterFlags) -> dict[str, list]:
-    """Run the pipeline once over all rows whose filtered set isn't cached.
-    Returns {name: kept_molecules} for every row."""
-    missing = [
-        r for r in rows
-        if (str(r["path"]), filters) not in st.session_state.mol_cache
-    ]
-    if missing:
-        run_dir = Path(tempfile.mkdtemp(prefix="run_", dir=st.session_state.session_dir))
-        params = Params(
-            filters=filters,
-            inputs=tuple(
-                Input(path=str(r["path"]), dataset=r["dataset"], name=r["name"])
-                for r in missing
-            ),
-            output_dir=str(run_dir),
-            metrics_csv=str(run_dir / "molecular_metrics.csv"),
-            artifacts_dir=str(run_dir / "artifacts"),
-        )
-        run_pipeline(params)
-        for r in missing:
-            out_path = run_dir / catalog.filtered_db_name(r["name"], filters=filters)
-            mols = _load_raw(out_path, r["dataset"], r["name"])
-            st.session_state.mol_cache[(str(r["path"]), filters)] = mols
-    return {
-        r["name"]: st.session_state.mol_cache[(str(r["path"]), filters)]
-        for r in rows
-    }
-
-
-# ---------------------------------------------------------------------------
 # 3. Filter criteria + run + view CSV
 #
 # The FilterFlags chosen here are shared with the plot section below — if a
@@ -257,13 +182,6 @@ if filter_run_clicked:
     )
     with st.spinner(f"Running on {len(params.inputs)} input(s)…"):
         manifest = run_pipeline(params)
-    # Seed plot cache so the same flags don't trigger a re-run from the plot section.
-    for r in st.session_state.rows.values():
-        out_path = run_dir / catalog.filtered_db_name(r["name"], filters=filters_selected)
-        if out_path.exists():
-            st.session_state.mol_cache[(str(r["path"]), filters_selected)] = (
-                _load_raw(out_path, r["dataset"], r["name"])
-            )
     st.session_state.last_filter_run = {
         "csv_path": params.metrics_csv,
         "manifest_path": str(manifest.path),
@@ -286,87 +204,40 @@ if st.session_state.last_filter_run is not None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Pick plots + per-plot source
+# 4. Bar plot of average atom proportion (driven by ecomp.json files
+#    produced by the filter pipeline). Pick any subset of the JSONs the
+#    last run produced — raw + filtered for each DB — to overlay.
 # ---------------------------------------------------------------------------
-st.subheader("4. Plots to render")
-selected_plots: dict[str, str] = {}   # plot_name -> "raw" | "filtered"
-for plot_name in PLOTS:
-    col_a, col_b = st.columns([3, 2])
-    enabled = col_a.checkbox(plot_name, key=f"plot_{plot_name}")
-    if enabled:
-        source = col_b.radio(
-            "source", ["raw", "filtered"],
-            horizontal=True,
-            key=f"src_{plot_name}",
-            label_visibility="collapsed",
+st.subheader("4. Average atom proportion (bar)")
+if st.session_state.last_filter_run is None:
+    st.caption("Run the filter pipeline above first — the bar plot reads its ecomp.json outputs.")
+else:
+    run_dir = Path(st.session_state.last_filter_run["output_dir"])
+    json_paths = sorted(run_dir.glob("*.ecomp.json"))
+    if not json_paths:
+        st.caption("No ecomp.json files found in the last run's output dir.")
+    else:
+        # Label = filename stem (strip .ecomp); easier to read than full path.
+        options = {p.name.replace(".ecomp.json", ""): str(p) for p in json_paths}
+        picked = st.multiselect(
+            "Datasets to compare",
+            options=list(options),
+            default=list(options),
+            key="ecomp_bar_picked",
         )
-        selected_plots[plot_name] = source
+        if st.button("Render bar plot", key="render_bar"):
+            series = [(label, options[label]) for label in picked]
+            with st.spinner("Rendering…"):
+                fig = bar_average_proportion(series)
+            st.pyplot(fig)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+            st.download_button(
+                "Download PNG",
+                data=buf.getvalue(),
+                file_name="ecomp_bar.png",
+                mime="image/png",
+                key="dl_ecomp_bar",
+            )
 
 
-# ---------------------------------------------------------------------------
-# 5. Run plots
-#
-# Plots that pick 'filtered' use the FilterFlags from section 3.
-# ---------------------------------------------------------------------------
-st.subheader("5. Render plots")
-needs_filter = any(src == "filtered" for src in selected_plots.values())
-if needs_filter:
-    st.caption(f"Plots marked 'filtered' will use: `{filters_selected.applied_label()}`")
-run_disabled = not st.session_state.rows or not selected_plots
-if run_disabled:
-    st.caption("Drop at least one file and pick at least one plot to enable.")
-run_clicked = st.button("Render plots", type="primary", disabled=run_disabled)
-
-
-# ---------------------------------------------------------------------------
-# 6. Execute on click
-# ---------------------------------------------------------------------------
-if run_clicked:
-    rows = list(st.session_state.rows.values())
-    figures: list[tuple[str, Figure]] = []
-
-    # Pre-compute the data each plot needs. Group by source so filtered runs once.
-    sources_needed = set(selected_plots.values())
-    raw_data: dict[str, list] = {}
-    filtered_data: dict[str, list] = {}
-
-    with st.spinner("Loading…"):
-        if "raw" in sources_needed:
-            raw_data = {r["name"]: _load_raw(r["path"], r["dataset"], r["name"])
-                        for r in rows}
-        if "filtered" in sources_needed:
-            filtered_data = _load_filtered(rows, filters_selected)
-
-    # All loaded DBs share a dataset family in practice (one selectbox per row,
-    # but for the dataset_info argument the plots need *a* dataset_info; for
-    # mixed-dataset selections, use the first row's. Plots that need exact
-    # decoder mappings should handle this themselves later.).
-    info = info_for(rows[0]["dataset"])
-
-    with st.spinner("Rendering plots…"):
-        for plot_name, source in selected_plots.items():
-            data = raw_data if source == "raw" else filtered_data
-            fig = PLOTS[plot_name](data, info)
-            figures.append((f"{plot_name}  ({source})", fig))
-
-    st.session_state.last_figures = figures
-
-
-# ---------------------------------------------------------------------------
-# 7. Results
-# ---------------------------------------------------------------------------
-if st.session_state.last_figures:
-    st.subheader("Results")
-    for label, fig in st.session_state.last_figures:
-        st.markdown(f"**{label}**")
-        st.pyplot(fig)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        st.download_button(
-            "Download PNG",
-            data=buf.getvalue(),
-            file_name=f"{label.replace(' ', '_').replace('(', '').replace(')', '')}.png",
-            mime="image/png",
-            key=f"dl_{label}",
-        )
-        st.divider()

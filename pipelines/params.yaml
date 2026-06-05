@@ -19,6 +19,6 @@ inputs:
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/GeoLDM_qm9.db,  dataset: qm9, name: GeoLDM_qm9 }
   - { path: /Users/abdullah/Dev/MChem_DGMs/analysis/Databases/JODO_qm9_raw.db, dataset: qm9, name: JODO_qm9 }
 
-output_dir: .
-metrics_csv: molecular_metrics.csv
+output_dir: artifacts/cli
+metrics_csv: artifacts/cli/molecular_metrics.csv
 artifacts_dir: artifacts
