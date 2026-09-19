@@ -29,6 +29,7 @@ import pandas as pd
 import streamlit as st
 
 from pipelines.config import FilterFlags, Input, Params
+from pipelines.quick import generate_raw_jsons
 from pipelines.runner import run as run_pipeline
 from plots.ecomp_bar import bar_average_proportion
 
@@ -47,6 +48,10 @@ if "session_dir" not in st.session_state:
     st.session_state.session_id = uuid.uuid4().hex[:8]
     st.session_state.session_dir = UPLOADS_ROOT / st.session_state.session_id
     st.session_state.session_dir.mkdir(exist_ok=True)
+if "raw_jsons" not in st.session_state:
+    # (uploaded_filename, dataset, name) -> {"smiles": Path, "ecomp": Path}
+    # Rebuilt whenever the (dataset, name) combo for a row changes.
+    st.session_state.raw_jsons = {}
 if "last_filter_run" not in st.session_state:
     st.session_state.last_filter_run = None   # dict: csv_path, manifest_path, output_dir
 
@@ -56,6 +61,7 @@ def _wipe_session() -> None:
     shutil.rmtree(st.session_state.session_dir, ignore_errors=True)
     st.session_state.session_dir.mkdir(parents=True, exist_ok=True)
     st.session_state.rows = {}
+    st.session_state.raw_jsons = {}
     st.session_state.last_filter_run = None
 
 
@@ -127,10 +133,40 @@ else:
         )
         if c4.button("✕", key=f"rm_{fname}"):
             row["path"].unlink(missing_ok=True)
+            # Drop this file's raw JSON entries + files from disk.
+            for key in [k for k in st.session_state.raw_jsons if k[0] == fname]:
+                paths = st.session_state.raw_jsons.pop(key)
+                paths["smiles"].unlink(missing_ok=True)
+                paths["ecomp"].unlink(missing_ok=True)
             del st.session_state.rows[fname]
             if not st.session_state.rows:
                 _wipe_session()
             st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Auto-generate raw JSONs for any (fname, dataset, name) combo that
+# doesn't have them yet. Lets the bar plot compare freshly-dropped DBs
+# without waiting for the filter pipeline. Stale entries (user renamed
+# or changed dataset) get cleared and rebuilt.
+# ---------------------------------------------------------------------------
+if st.session_state.rows:
+    raw_dir = st.session_state.session_dir / "raw"
+    for fname, row in st.session_state.rows.items():
+        combo = (fname, row["dataset"], row["name"])
+        if combo in st.session_state.raw_jsons:
+            continue
+        # Drop any older entry for this fname (dataset/name changed).
+        for stale in [k for k in st.session_state.raw_jsons if k[0] == fname]:
+            old = st.session_state.raw_jsons.pop(stale)
+            old["smiles"].unlink(missing_ok=True)
+            old["ecomp"].unlink(missing_ok=True)
+        with st.spinner(f"Preparing raw JSONs for {row['name']}…"):
+            smi_path, eco_path = generate_raw_jsons(
+                Input(path=str(row["path"]), dataset=row["dataset"], name=row["name"]),
+                raw_dir,
+            )
+        st.session_state.raw_jsons[combo] = {"smiles": smi_path, "ecomp": eco_path}
 
 
 # ---------------------------------------------------------------------------
@@ -209,35 +245,40 @@ if st.session_state.last_filter_run is not None:
 #    last run produced — raw + filtered for each DB — to overlay.
 # ---------------------------------------------------------------------------
 st.subheader("4. Average atom proportion (bar)")
-if st.session_state.last_filter_run is None:
-    st.caption("Run the filter pipeline above first — the bar plot reads its ecomp.json outputs.")
-else:
+# Merge two sources: raw JSONs auto-generated on upload, and filtered JSONs
+# from the last filter run (if there was one). Raw entries are always
+# available; filtered entries require Section 3 to have been Run.
+options: dict[str, str] = {}
+for combo, paths in st.session_state.raw_jsons.items():
+    label = f"{combo[2]}_raw"   # combo[2] is the row's `name`
+    options[label] = str(paths["ecomp"])
+if st.session_state.last_filter_run is not None:
     run_dir = Path(st.session_state.last_filter_run["output_dir"])
-    json_paths = sorted(run_dir.glob("*.ecomp.json"))
-    if not json_paths:
-        st.caption("No ecomp.json files found in the last run's output dir.")
-    else:
-        # Label = filename stem (strip .ecomp); easier to read than full path.
-        options = {p.name.replace(".ecomp.json", ""): str(p) for p in json_paths}
-        picked = st.multiselect(
-            "Datasets to compare",
-            options=list(options),
-            default=list(options),
-            key="ecomp_bar_picked",
+    for p in sorted(run_dir.glob("*_filtered_*.ecomp.json")):
+        options[p.name.replace(".ecomp.json", "")] = str(p)
+
+if not options:
+    st.caption("Drop at least one .db file above to enable comparison.")
+else:
+    picked = st.multiselect(
+        "Datasets to compare",
+        options=list(options),
+        default=list(options),
+        key="ecomp_bar_picked",
+    )
+    if st.button("Render bar plot", key="render_bar", disabled=not picked):
+        series = [(label, options[label]) for label in picked]
+        with st.spinner("Rendering…"):
+            fig = bar_average_proportion(series)
+        st.pyplot(fig)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+        st.download_button(
+            "Download PNG",
+            data=buf.getvalue(),
+            file_name="ecomp_bar.png",
+            mime="image/png",
+            key="dl_ecomp_bar",
         )
-        if st.button("Render bar plot", key="render_bar"):
-            series = [(label, options[label]) for label in picked]
-            with st.spinner("Rendering…"):
-                fig = bar_average_proportion(series)
-            st.pyplot(fig)
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-            st.download_button(
-                "Download PNG",
-                data=buf.getvalue(),
-                file_name="ecomp_bar.png",
-                mime="image/png",
-                key="dl_ecomp_bar",
-            )
 
 
