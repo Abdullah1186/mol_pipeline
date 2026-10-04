@@ -19,7 +19,7 @@ from .base import Step
 class ApplyFilters(Step):
     name = "apply_filters"
     inputs = ("molecules", "source_ids", "is_valid", "is_unique")
-    outputs = ("kept_molecules", "kept_source_ids")
+    outputs = ("kept_molecules", "kept_source_ids", "kept_indices")
 
     def run(
         self, ctx: RunContext, *, molecules, source_ids, is_valid, is_unique, **_: Any
@@ -36,6 +36,11 @@ class ApplyFilters(Step):
         )
 
         mask = [v and u and e for v, u, e in zip(keep_valid, keep_unique, keep_even)]
-        kept_mols = [m for m, k in zip(molecules, mask) if k]
-        kept_ids = [s for s, k in zip(source_ids, mask) if k]
-        return {"kept_molecules": kept_mols, "kept_source_ids": kept_ids}
+        kept_indices = [i for i, k in enumerate(mask) if k]
+        kept_mols = [molecules[i] for i in kept_indices]
+        kept_ids = [source_ids[i] for i in kept_indices]
+        return {
+            "kept_molecules": kept_mols,
+            "kept_source_ids": kept_ids,
+            "kept_indices": kept_indices,
+        }

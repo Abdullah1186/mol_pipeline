@@ -32,7 +32,10 @@ class WriteDB(Step):
 
         src = connect(ctx.input.path)
         dst = connect(str(out_path))
-        for sid in kept_source_ids:
-            dst.write(src.get(sid).toatoms())
+        # Single transaction: ASE DB is SQLite under the hood, so one commit
+        # for all N rows beats N commits by 5-10x on large sets.
+        with dst:
+            for sid in kept_source_ids:
+                dst.write(src.get(sid).toatoms())
 
         return {"output_path": str(out_path)}

@@ -39,18 +39,19 @@ def _run_pair(ctx: RunContext) -> None:
     bag.update(LoadDB().execute(ctx))
     total = len(bag["molecules"])
 
-    # 1b. smiles + ecomp JSONs for the raw molecule set
-    WriteJSONs("raw", basename=f"{ctx.input.name}_raw").execute(
-        ctx, molecules=bag["molecules"]
-    )
-
     # 2. odd-e scan on raw
     odd_before = ScanOddE("before").execute(ctx, molecules=bag["molecules"])["odd_count"]
 
-    # 3. V/U/N measurement + per-mol flags
+    # 3. V/U/N measurement + per-mol flags + cached SMILES
     bag.update(Evaluate().execute(
         ctx, molecules=bag["molecules"], source_ids=bag["source_ids"]
     ))
+
+    # 3b. smiles + ecomp JSONs for the raw molecule set — reuses the SMILES
+    # computed in Evaluate so no second RDKit pass.
+    WriteJSONs("raw", basename=f"{ctx.input.name}_raw").execute(
+        ctx, molecules=bag["molecules"], smiles=bag["db_smiles"],
+    )
 
     # 4. apply user-selected filter criteria
     bag.update(ApplyFilters().execute(
@@ -70,8 +71,10 @@ def _run_pair(ctx: RunContext) -> None:
     filtered_basename = Path(
         catalog.filtered_db_name(ctx.input.name, filters=ctx.params.filters)
     ).stem
+    # Reuse cached SMILES, indexed by the kept positions in the original list.
+    kept_smiles = [bag["db_smiles"][i] for i in bag["kept_indices"]]
     WriteJSONs("filtered", basename=filtered_basename).execute(
-        ctx, molecules=bag["kept_molecules"]
+        ctx, molecules=bag["kept_molecules"], smiles=kept_smiles,
     )
 
     # 7. append CSV row
@@ -92,9 +95,12 @@ def _run_pair(ctx: RunContext) -> None:
     print(f"[{ctx.input.name}] done — kept {len(bag['kept_molecules'])} / {total}")
 
 
-def run(params: Params) -> Manifest:
+def run(params: Params, on_progress=None) -> Manifest:
     """Execute the pipeline against an in-memory Params. Returns the
-    Manifest so callers (CLI, Streamlit UI, tests) can inspect lineage."""
+    Manifest so callers (CLI, Streamlit UI, tests) can inspect lineage.
+
+    on_progress: optional callable(index, total, name) called before each
+    input is processed. Lets the UI drive a progress bar."""
     run_id = new_run_id()
     manifest = Manifest(
         run_id=run_id,
@@ -110,9 +116,14 @@ def run(params: Params) -> Manifest:
     # CSV header written once per run (matches old filter.py:18-25 — 'w' mode wipes existing)
     write_header(params.metrics_csv)
 
-    for inp in params.inputs:
+    total = len(params.inputs)
+    for i, inp in enumerate(params.inputs):
+        if on_progress is not None:
+            on_progress(i, total, inp.name)
         ctx = RunContext(run_id=run_id, params=params, manifest=manifest, input=inp)
         _run_pair(ctx)
+    if on_progress is not None:
+        on_progress(total, total, None)
 
     print(f"manifest: {manifest.path}")
     print(f"metrics:  {params.metrics_csv}")

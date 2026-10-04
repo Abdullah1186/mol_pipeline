@@ -22,9 +22,17 @@ from .steps.write_jsons import WriteJSONs
 _NO_FILTERS = FilterFlags(valid=False, unique=False, even_electrons=False)
 
 
-def generate_raw_jsons(inp: Input, out_dir: Path) -> tuple[Path, Path]:
-    """Load `inp` and write <name>_raw.smiles.json + <name>_raw.ecomp.json
-    into `out_dir`. Returns (smiles_path, ecomp_path)."""
+def generate_raw_jsons(
+    inp: Input, out_dir: Path, *, include_smiles: bool = False,
+) -> tuple[Path | None, Path]:
+    """Load `inp` and write <name>_raw.ecomp.json into `out_dir`.
+
+    When include_smiles is True (default: False) also writes
+    <name>_raw.smiles.json. The default skips SMILES because the
+    dashboard doesn't read them and the RDKit pass is the dominant cost.
+
+    Returns (smiles_path_or_None, ecomp_path).
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +52,8 @@ def generate_raw_jsons(inp: Input, out_dir: Path) -> tuple[Path, Path]:
     ctx = RunContext(run_id=run_id, params=params, manifest=manifest, input=inp)
 
     load_out = LoadDB().execute(ctx)
-    json_out = WriteJSONs("raw", basename=f"{inp.name}_raw").execute(
-        ctx, molecules=load_out["molecules"]
-    )
-    return Path(json_out["smiles_path"]), Path(json_out["ecomp_path"])
+    json_out = WriteJSONs(
+        "raw", basename=f"{inp.name}_raw", include_smiles=include_smiles
+    ).execute(ctx, molecules=load_out["molecules"])
+    smi = Path(json_out["smiles_path"]) if json_out["smiles_path"] else None
+    return smi, Path(json_out["ecomp_path"])
