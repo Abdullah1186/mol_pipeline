@@ -109,6 +109,16 @@ if st.session_state.last_filter_run is not None:
     for _p in sorted(_rd.glob("*_filtered_*.ecomp.json")):
         ecomp_options[_p.name.replace(".ecomp.json", "")] = str(_p)
 
+# True when at least one dropped file hasn't had its raw JSONs generated yet.
+# Used to disable plot controls so the user can't tweak settings that would
+# produce an empty / inconsistent dashboard mid-upload.
+_uploads_pending = any(
+    (fname, row["dataset"], row["name"]) not in st.session_state.raw_jsons
+    for fname, row in st.session_state.rows.items()
+)
+# A plot control is useful once uploads are done AND we actually have options.
+_plot_controls_disabled = _uploads_pending or not ecomp_options
+
 
 # ---------------------------------------------------------------------------
 # Sidebar: session, filter criteria, plot toggles, dataset picker, per-plot
@@ -138,14 +148,33 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### Plots")
-    show_bar = st.checkbox("Average atom proportion (bar)", value=True)
-    show_elem = st.checkbox("Element distribution", value=True)
-    show_atoms_wt = st.checkbox("Atom count & molecular weight", value=False)
+    if _uploads_pending:
+        st.caption("Preparing uploads — plots unlock when ready.")
+    elif not ecomp_options:
+        st.caption("Drop a .db file to enable.")
+    # All checkboxes start unticked and stay disabled until uploads are done.
+    show_bar = st.checkbox(
+        "Average atom proportion (bar)",
+        value=False, disabled=_plot_controls_disabled, key="dash_show_bar",
+    )
+    show_elem = st.checkbox(
+        "Element distribution",
+        value=False, disabled=_plot_controls_disabled, key="dash_show_elem",
+    )
+    show_atoms_wt = st.checkbox(
+        "Atom count & molecular weight",
+        value=False, disabled=_plot_controls_disabled, key="dash_show_atoms_wt",
+    )
 
     st.markdown("### Datasets to compare")
-    if not ecomp_options:
-        st.caption("Drop a .db file to populate.")
+    if _plot_controls_disabled:
         picked_labels: list[str] = []
+        # Show a disabled, empty-looking placeholder so the layout doesn't jump.
+        st.multiselect(
+            "Datasets", options=[], default=[],
+            disabled=True, key="dash_datasets_placeholder",
+            label_visibility="collapsed",
+        )
     else:
         picked_labels = st.multiselect(
             "Datasets",
@@ -159,7 +188,7 @@ with st.sidebar:
     picked_series = [(lab, ecomp_options[lab]) for lab in picked_labels]
     element_sym = None
     element_style = "histogram"
-    if show_elem:
+    if show_elem and not _plot_controls_disabled:
         st.markdown("### Element plot")
         _elements = _available_elements(picked_series) if picked_series else []
         if _elements:
@@ -172,7 +201,7 @@ with st.sidebar:
             st.caption("Pick a dataset first.")
 
     atoms_wt_which = "Both"
-    if show_atoms_wt:
+    if show_atoms_wt and not _plot_controls_disabled:
         st.markdown("### Atom/weight plot")
         atoms_wt_which = st.radio(
             "Quantity", ["Atom count", "Molecular weight", "Both"],
