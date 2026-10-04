@@ -35,7 +35,7 @@ def _kde_figure(
     xlabel: str,
     xlim: tuple[float, float] | None = None,
 ) -> Figure:
-    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+    fig, ax = plt.subplots(figsize=(5.5, 3.4))
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.45, zorder=0)
     ax.set_axisbelow(True)
 

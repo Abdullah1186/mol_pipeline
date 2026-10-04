@@ -64,7 +64,7 @@ def element_distribution(
     # Integer-centred bins so each count sits in its own bar.
     bins = np.arange(max_count + 2) - 0.5
 
-    fig, ax = plt.subplots(figsize=(max(7.0, 0.5 * (max_count + 2) + 2), 4.8))
+    fig, ax = plt.subplots(figsize=(max(5.0, 0.3 * (max_count + 2) + 1.5), 3.4))
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.45, zorder=0)
     ax.set_axisbelow(True)
 

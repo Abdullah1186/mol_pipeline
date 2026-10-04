@@ -1,16 +1,11 @@
-"""Streamlit UI for the molecule pipeline + plots.
+"""Molecular Analysis Pipeline — Streamlit dashboard.
 
 Run with: streamlit run app.py
 
-Flow:
-  1. Drop .db files.
-  2. Set dataset + name per file.
-  3. Pick plots to render; for each plot pick raw or filtered source.
-  4. (Only if any plot needs filtered) tweak filter settings.
-  5. Run. Filter runs lazily (only if anything asked for filtered) and is
-     cached per (db_path, filter_odd_e).
-  6. Each plot renders one overlaid figure across all selected DBs, with
-     a PNG download button.
+Layout:
+  Sidebar: session controls, filter criteria + run, plot toggles,
+           shared dataset picker, per-plot settings.
+  Main:    file uploader, per-file config, metrics CSV, 2-column plot grid.
 """
 
 from __future__ import annotations
@@ -36,8 +31,8 @@ from plots.ecomp_bar import bar_average_proportion
 from plots.element_dist import _available_elements, element_distribution
 
 
-st.set_page_config(page_title="Molecule Pipeline", layout="wide")
-st.title("Molecule Pipeline")
+st.set_page_config(page_title="Molecular Analysis Pipeline", layout="wide")
+st.title("Molecular Analysis Pipeline")
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +63,42 @@ def _wipe_session() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar
+# Auto-gen for any (fname, dataset, name) combo lacking raw JSONs.
+# Runs before the sidebar so the dataset multiselect can see fresh labels.
+# ---------------------------------------------------------------------------
+if st.session_state.rows:
+    _raw_dir = st.session_state.session_dir / "raw"
+    for _fname, _row in st.session_state.rows.items():
+        _combo = (_fname, _row["dataset"], _row["name"])
+        if _combo in st.session_state.raw_jsons:
+            continue
+        for _stale in [k for k in st.session_state.raw_jsons if k[0] == _fname]:
+            _old = st.session_state.raw_jsons.pop(_stale)
+            _old["smiles"].unlink(missing_ok=True)
+            _old["ecomp"].unlink(missing_ok=True)
+        with st.spinner(f"Preparing raw JSONs for {_row['name']}…"):
+            _smi, _eco = generate_raw_jsons(
+                Input(path=str(_row["path"]), dataset=_row["dataset"], name=_row["name"]),
+                _raw_dir,
+            )
+        st.session_state.raw_jsons[_combo] = {"smiles": _smi, "ecomp": _eco}
+
+
+# ---------------------------------------------------------------------------
+# Shared across sidebar + main pane: {label: ecomp_json_path}.
+# ---------------------------------------------------------------------------
+ecomp_options: dict[str, str] = {}
+for _combo, _paths in st.session_state.raw_jsons.items():
+    ecomp_options[f"{_combo[2]}_raw"] = str(_paths["ecomp"])
+if st.session_state.last_filter_run is not None:
+    _rd = Path(st.session_state.last_filter_run["output_dir"])
+    for _p in sorted(_rd.glob("*_filtered_*.ecomp.json")):
+        ecomp_options[_p.name.replace(".ecomp.json", "")] = str(_p)
+
+
+# ---------------------------------------------------------------------------
+# Sidebar: session, filter criteria, plot toggles, dataset picker, per-plot
+# settings. All in-pane plots read these values.
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### Session")
@@ -77,6 +107,63 @@ with st.sidebar:
     if st.button("Clear uploads", use_container_width=True):
         _wipe_session()
         st.rerun()
+
+    st.divider()
+    st.markdown("### Filter criteria")
+    f_valid = st.checkbox("Validity", value=True,
+                          help="Keep RDKit-sanitisable mols.")
+    f_unique = st.checkbox("Uniqueness", value=True, disabled=not f_valid,
+                           help="Keep first SMILES. Requires Validity.")
+    if not f_valid:
+        f_unique = False
+    f_even = st.checkbox("Even electrons", value=False,
+                         help="Drop odd-electron molecules.")
+    filters_selected = FilterFlags(valid=f_valid, unique=f_unique,
+                                   even_electrons=f_even)
+    st.caption(f"applied = `{filters_selected.applied_label()}`")
+
+    st.divider()
+    st.markdown("### Plots")
+    show_bar = st.checkbox("Average atom proportion (bar)", value=True)
+    show_elem = st.checkbox("Element distribution", value=True)
+    show_atoms_wt = st.checkbox("Atom count & molecular weight", value=False)
+
+    st.markdown("### Datasets to compare")
+    if not ecomp_options:
+        st.caption("Drop a .db file to populate.")
+        picked_labels: list[str] = []
+    else:
+        picked_labels = st.multiselect(
+            "Datasets",
+            options=list(ecomp_options),
+            default=list(ecomp_options),
+            key="dash_datasets",
+            label_visibility="collapsed",
+        )
+
+    # Per-plot settings (shown only when the relevant plot is enabled)
+    picked_series = [(lab, ecomp_options[lab]) for lab in picked_labels]
+    element_sym = None
+    element_style = "histogram"
+    if show_elem:
+        st.markdown("### Element plot")
+        _elements = _available_elements(picked_series) if picked_series else []
+        if _elements:
+            element_sym = st.selectbox("Element", _elements, key="dash_el_sym")
+            element_style = st.radio(
+                "Style", ["histogram", "histogram+kde"],
+                horizontal=True, key="dash_el_style",
+            )
+        else:
+            st.caption("Pick a dataset first.")
+
+    atoms_wt_which = "Both"
+    if show_atoms_wt:
+        st.markdown("### Atom/weight plot")
+        atoms_wt_which = st.radio(
+            "Quantity", ["Atom count", "Molecular weight", "Both"],
+            key="dash_aw_which",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -147,58 +234,15 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Auto-generate raw JSONs for any (fname, dataset, name) combo that
-# doesn't have them yet. Lets the bar plot compare freshly-dropped DBs
-# without waiting for the filter pipeline. Stale entries (user renamed
-# or changed dataset) get cleared and rebuilt.
+# 3. Run filter pipeline + view metrics CSV.
+# Filter flags come from the sidebar.
 # ---------------------------------------------------------------------------
-if st.session_state.rows:
-    raw_dir = st.session_state.session_dir / "raw"
-    for fname, row in st.session_state.rows.items():
-        combo = (fname, row["dataset"], row["name"])
-        if combo in st.session_state.raw_jsons:
-            continue
-        # Drop any older entry for this fname (dataset/name changed).
-        for stale in [k for k in st.session_state.raw_jsons if k[0] == fname]:
-            old = st.session_state.raw_jsons.pop(stale)
-            old["smiles"].unlink(missing_ok=True)
-            old["ecomp"].unlink(missing_ok=True)
-        with st.spinner(f"Preparing raw JSONs for {row['name']}…"):
-            smi_path, eco_path = generate_raw_jsons(
-                Input(path=str(row["path"]), dataset=row["dataset"], name=row["name"]),
-                raw_dir,
-            )
-        st.session_state.raw_jsons[combo] = {"smiles": smi_path, "ecomp": eco_path}
-
-
-# ---------------------------------------------------------------------------
-# 3. Filter criteria + run + view CSV
-#
-# The FilterFlags chosen here are shared with the plot section below — if a
-# plot asks for 'filtered' data, it gets the same flags.
-# ---------------------------------------------------------------------------
-st.subheader("3. Filter criteria")
-fcol1, fcol2, fcol3 = st.columns(3)
-f_valid = fcol1.checkbox("Validity", value=True, help="Keep RDKit-sanitisable mols.")
-f_unique = fcol2.checkbox(
-    "Uniqueness",
-    value=True,
-    disabled=not f_valid,
-    help="Keep first occurrence per SMILES. Requires Validity.",
-)
-if not f_valid:
-    f_unique = False
-f_even = fcol3.checkbox(
-    "Even electrons",
-    value=False,
-    help="Drop molecules whose total atomic number is odd.",
-)
-filters_selected = FilterFlags(valid=f_valid, unique=f_unique, even_electrons=f_even)
-st.caption(f"Filters_applied = `{filters_selected.applied_label()}`")
-
+st.subheader("3. Run filter pipeline")
 filter_run_disabled = not st.session_state.rows
 if filter_run_disabled:
     st.caption("Drop at least one file above to enable.")
+else:
+    st.caption(f"Will apply: `{filters_selected.applied_label()}` (change in sidebar).")
 filter_run_clicked = st.button(
     "Run filter pipeline",
     type="primary",
@@ -227,11 +271,12 @@ if filter_run_clicked:
         "filters_label": filters_selected.applied_label(),
     }
     st.success("Filter done.")
+    st.rerun()  # pick up the new filtered JSONs into ecomp_options
 
 if st.session_state.last_filter_run is not None:
     lr = st.session_state.last_filter_run
-    df = pd.read_csv(lr["csv_path"])
-    st.dataframe(df, use_container_width=True)
+    with st.expander("Metrics CSV", expanded=True):
+        st.dataframe(pd.read_csv(lr["csv_path"]), use_container_width=True)
     with st.expander("Manifest (per-step lineage)"):
         m = json.loads(Path(lr["manifest_path"]).read_text())
         st.caption(
@@ -242,116 +287,75 @@ if st.session_state.last_filter_run is not None:
 
 
 # ---------------------------------------------------------------------------
-# Shared across plot sections: {label: ecomp_json_path}.
-# Raw entries land here automatically after a file is dropped (Section 2
-# auto-gen); filtered entries show up after Section 3's Run button.
+# Dashboard: a 2-column grid of all plots the user enabled in the sidebar.
+# Plots auto-render whenever any sidebar control changes.
 # ---------------------------------------------------------------------------
-ecomp_options: dict[str, str] = {}
-for combo, paths in st.session_state.raw_jsons.items():
-    label = f"{combo[2]}_raw"   # combo[2] is the row's `name`
-    ecomp_options[label] = str(paths["ecomp"])
-if st.session_state.last_filter_run is not None:
-    _run_dir = Path(st.session_state.last_filter_run["output_dir"])
-    for _p in sorted(_run_dir.glob("*_filtered_*.ecomp.json")):
-        ecomp_options[_p.name.replace(".ecomp.json", "")] = str(_p)
-
-
 def _download_fig(fig, filename: str, key: str) -> None:
-    """PNG download button for a matplotlib Figure. Avoids repeating code."""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
     st.download_button(
-        "Download PNG",
-        data=buf.getvalue(),
-        file_name=filename,
-        mime="image/png",
-        key=key,
+        "Download PNG", data=buf.getvalue(),
+        file_name=filename, mime="image/png", key=key,
     )
 
 
-# ---------------------------------------------------------------------------
-# 4. Average atom proportion (bar)
-# ---------------------------------------------------------------------------
-st.subheader("4. Average atom proportion (bar)")
+def _render_bar() -> None:
+    st.markdown("**Average atom proportion**")
+    fig = bar_average_proportion(picked_series)
+    st.pyplot(fig)
+    _download_fig(fig, "ecomp_bar.png", "dl_bar")
+
+
+def _render_element() -> None:
+    st.markdown(f"**Element distribution — {element_sym}**")
+    fig = element_distribution(picked_series, element_sym, style=element_style)
+    st.pyplot(fig)
+    _download_fig(fig, f"element_dist_{element_sym}.png", "dl_el")
+
+
+def _render_atom_count() -> None:
+    st.markdown("**Atom count per molecule**")
+    fig = atom_count_distribution(picked_series)
+    st.pyplot(fig)
+    _download_fig(fig, "atom_count_kde.png", "dl_atoms")
+
+
+def _render_weight() -> None:
+    st.markdown("**Molecular weight (g/mol)**")
+    fig = weight_distribution(picked_series)
+    st.pyplot(fig)
+    _download_fig(fig, "molecular_weight_kde.png", "dl_weight")
+
+
+# Build the list of (title, render_fn) pairs the user has asked for.
+_tiles: list = []
+if show_bar and picked_series:
+    _tiles.append(_render_bar)
+if show_elem and picked_series and element_sym is not None:
+    _tiles.append(_render_element)
+if show_atoms_wt and picked_series:
+    if atoms_wt_which in ("Atom count", "Both"):
+        _tiles.append(_render_atom_count)
+    if atoms_wt_which in ("Molecular weight", "Both"):
+        _tiles.append(_render_weight)
+
+st.subheader("4. Dashboard")
 if not ecomp_options:
-    st.caption("Drop at least one .db file above to enable comparison.")
+    st.caption("Drop at least one .db file above to populate the dashboard.")
+elif not picked_series:
+    st.caption("Pick at least one dataset in the sidebar.")
+elif not _tiles:
+    st.caption("Enable at least one plot in the sidebar.")
 else:
-    picked = st.multiselect(
-        "Datasets to compare",
-        options=list(ecomp_options),
-        default=list(ecomp_options),
-        key="ecomp_bar_picked",
-    )
-    if st.button("Render bar plot", key="render_bar", disabled=not picked):
-        series = [(label, ecomp_options[label]) for label in picked]
-        with st.spinner("Rendering…"):
-            fig = bar_average_proportion(series)
-        st.pyplot(fig)
-        _download_fig(fig, "ecomp_bar.png", "dl_ecomp_bar")
-
-
-# ---------------------------------------------------------------------------
-# 5. Element distribution across datasets (histogram, optional KDE overlay)
-# ---------------------------------------------------------------------------
-st.subheader("5. Element distribution")
-if not ecomp_options:
-    st.caption("Drop at least one .db file above to enable comparison.")
-else:
-    picked_el = st.multiselect(
-        "Datasets to compare",
-        options=list(ecomp_options),
-        default=list(ecomp_options),
-        key="element_dist_picked",
-    )
-    series_el = [(label, ecomp_options[label]) for label in picked_el]
-    elements = _available_elements(series_el) if series_el else []
-    if not elements:
-        st.caption("Pick at least one dataset.")
+    # 2-column grid, one tile per plot. Single tile goes full width.
+    if len(_tiles) == 1:
+        with st.container(border=True):
+            _tiles[0]()
     else:
-        c1, c2 = st.columns([1, 2])
-        element = c1.selectbox("Element", elements, key="element_dist_sym")
-        style = c2.radio(
-            "Style", ["histogram", "histogram+kde"],
-            horizontal=True, key="element_dist_style",
-        )
-        if st.button("Render element distribution", key="render_el"):
-            with st.spinner("Rendering…"):
-                fig = element_distribution(series_el, element, style=style)
-            st.pyplot(fig)
-            _download_fig(fig, f"element_dist_{element}.png", "dl_el")
-
-
-# ---------------------------------------------------------------------------
-# 6. Atom count + molecular weight distributions (KDE curves)
-# ---------------------------------------------------------------------------
-st.subheader("6. Atom count & molecular weight")
-if not ecomp_options:
-    st.caption("Drop at least one .db file above to enable comparison.")
-else:
-    picked_aw = st.multiselect(
-        "Datasets to compare",
-        options=list(ecomp_options),
-        default=list(ecomp_options),
-        key="atoms_weight_picked",
-    )
-    which = st.radio(
-        "Quantity",
-        ["Atom count", "Molecular weight", "Both"],
-        horizontal=True,
-        key="atoms_weight_which",
-    )
-    if st.button("Render", key="render_aw", disabled=not picked_aw):
-        series_aw = [(label, ecomp_options[label]) for label in picked_aw]
-        with st.spinner("Rendering…"):
-            if which in ("Atom count", "Both"):
-                fig_a = atom_count_distribution(series_aw)
-                st.markdown("**Atom count per molecule**")
-                st.pyplot(fig_a)
-                _download_fig(fig_a, "atom_count_kde.png", "dl_atom_count")
-            if which in ("Molecular weight", "Both"):
-                fig_w = weight_distribution(series_aw)
-                st.markdown("**Molecular weight (g/mol)**")
-                st.pyplot(fig_w)
-                _download_fig(fig_w, "molecular_weight_kde.png", "dl_weight")
+        for i in range(0, len(_tiles), 2):
+            cols = st.columns(2)
+            for col, render in zip(cols, _tiles[i:i + 2]):
+                with col, st.container(border=True):
+                    render()
 
 
