@@ -93,9 +93,9 @@ def bar_average_proportion(series: list[tuple[str, str]]) -> Figure:
     bar_width = min(0.85 / n_series, 0.28)
     shifts = (np.arange(n_series) - (n_series - 1) / 2) * bar_width
 
-    # Compact dashboard size — width scales modestly with element count.
-    fig_w = max(5.0, 0.5 * n_el + 1.2 + 0.1 * n_series)
-    fig, ax = plt.subplots(figsize=(fig_w, 3.4))
+    # Dashboard default: wider than tall, scales with element count.
+    fig_w = max(8.0, 0.9 * n_el + 2.0 + 0.2 * n_series)
+    fig, ax = plt.subplots(figsize=(fig_w, 5.0))
 
     # Light horizontal grid only — clean look.
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.45, zorder=0)

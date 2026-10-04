@@ -61,10 +61,24 @@ def element_distribution(
 
     arrays: list[np.ndarray] = [_element_counts(p, symbol) for _, p in series]
     max_count = max((a.max() if a.size else 0) for a in arrays)
+
+    fig, ax = plt.subplots(figsize=(max(8.0, 0.5 * (max_count + 2) + 2.0), 5.0))
+
+    # No molecule contains this element in any picked dataset — render a
+    # placeholder instead of letting matplotlib collapse to zero height.
+    if max_count == 0:
+        ax.text(
+            0.5, 0.5,
+            f"No '{symbol}' atoms in any picked dataset.",
+            ha="center", va="center", fontsize=14,
+            transform=ax.transAxes,
+        )
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
+
     # Integer-centred bins so each count sits in its own bar.
     bins = np.arange(max_count + 2) - 0.5
-
-    fig, ax = plt.subplots(figsize=(max(5.0, 0.3 * (max_count + 2) + 1.5), 3.4))
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.45, zorder=0)
     ax.set_axisbelow(True)
 

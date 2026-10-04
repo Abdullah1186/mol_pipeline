@@ -227,6 +227,7 @@ with tab_upload:
         label_visibility="collapsed",
     )
     if uploaded:
+        _new_rows = False
         for f in uploaded:
             if f.name in st.session_state.rows:
                 continue
@@ -237,6 +238,11 @@ with tab_upload:
                 "name": Path(f.name).stem,
                 "path": dest,
             }
+            _new_rows = True
+        # Nested-dict mutations don't trigger Streamlit reruns on their own,
+        # so force one so the sidebar + auto-gen see the new rows immediately.
+        if _new_rows:
+            st.rerun()
 
 
     # ---------------------------------------------------------------------------
@@ -358,28 +364,28 @@ with tab_filter:
     def _render_bar() -> None:
         st.markdown("**Average atom proportion**")
         fig = bar_average_proportion(picked_series)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
         _download_fig(fig, "ecomp_bar.png", "dl_bar")
 
 
     def _render_element() -> None:
         st.markdown(f"**Element distribution — {element_sym}**")
         fig = element_distribution(picked_series, element_sym, style=element_style)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
         _download_fig(fig, f"element_dist_{element_sym}.png", "dl_el")
 
 
     def _render_atom_count() -> None:
         st.markdown("**Atom count per molecule**")
         fig = atom_count_distribution(picked_series)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
         _download_fig(fig, "atom_count_kde.png", "dl_atoms")
 
 
     def _render_weight() -> None:
         st.markdown("**Molecular weight (g/mol)**")
         fig = weight_distribution(picked_series)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
         _download_fig(fig, "molecular_weight_kde.png", "dl_weight")
 
 
@@ -415,15 +421,10 @@ with tab_dashboard:
     elif not _tiles:
         st.caption("Enable at least one plot in the sidebar.")
     else:
-        # 2-column grid, one tile per plot. Single tile goes full width.
-        if len(_tiles) == 1:
+        # One tile per row — plots are large enough that side-by-side cramps
+        # them. The user can shrink/zoom via browser if needed.
+        for render in _tiles:
             with st.container(border=True):
-                _tiles[0]()
-        else:
-            for i in range(0, len(_tiles), 2):
-                cols = st.columns(2)
-                for col, render in zip(cols, _tiles[i:i + 2]):
-                    with col, st.container(border=True):
-                        render()
+                render()
 
 

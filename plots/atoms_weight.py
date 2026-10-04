@@ -35,11 +35,12 @@ def _kde_figure(
     xlabel: str,
     xlim: tuple[float, float] | None = None,
 ) -> Figure:
-    fig, ax = plt.subplots(figsize=(5.5, 3.4))
+    fig, ax = plt.subplots(figsize=(9.0, 5.0))
     ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.45, zorder=0)
     ax.set_axisbelow(True)
 
     cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", ["#4C72B0"])
+    drew_any = False
     for i, (label, vals) in enumerate(series_values):
         if len(vals) < 2 or max(vals) == min(vals):
             continue  # KDE requires variance
@@ -50,6 +51,21 @@ def _kde_figure(
             continue
         x = np.linspace(0, max(vals), 1000)
         ax.plot(x, density(x), label=label, color=color, alpha=0.85, linewidth=2)
+        drew_any = True
+
+    if not drew_any:
+        # Every series was skipped (constant data, too few points, or empty).
+        # Draw a message so the tile keeps a reasonable size.
+        ax.clear()
+        ax.text(
+            0.5, 0.5,
+            "No plottable data (need ≥2 points with variance per dataset).",
+            ha="center", va="center", fontsize=13,
+            transform=ax.transAxes,
+        )
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
 
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel("Density", fontsize=12)
