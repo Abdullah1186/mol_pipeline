@@ -92,6 +92,10 @@ if st.session_state.rows:
             _pbar.progress((_i + 1) / len(_todo))
         _ptext.empty()
         _pbar.empty()
+        # Rerun so the dashboard + sidebar multiselect pick up the fresh
+        # entries immediately — without this, the user has to toggle a
+        # control to force a rerun.
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -180,9 +184,9 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Tabs: Filter | Dashboard. Both share st.session_state set up above.
 # ---------------------------------------------------------------------------
-tab_filter, tab_dashboard = st.tabs(["🧪 Filter", "📊 Dashboard"])
+tab_upload, tab_filter, tab_dashboard = st.tabs(["Upload", "Filter", "Dashboard"])
 
-with tab_filter:
+with tab_upload:
     # ---------------------------------------------------------------------------
     # 1. Upload
     # ---------------------------------------------------------------------------
@@ -245,6 +249,8 @@ with tab_filter:
                 st.rerun()
 
 
+
+with tab_filter:
     # ---------------------------------------------------------------------------
     # 3. Run filter pipeline + view metrics CSV.
     # Filter flags come from the sidebar.
@@ -252,7 +258,7 @@ with tab_filter:
     st.subheader("3. Run filter pipeline")
     filter_run_disabled = not st.session_state.rows
     if filter_run_disabled:
-        st.caption("Drop at least one file above to enable.")
+        st.caption("Drop at least one file in the **Upload** tab to enable.")
     else:
         st.caption(f"Will apply: `{filters_selected.applied_label()}` (change in sidebar).")
     filter_run_clicked = st.button(
@@ -369,12 +375,12 @@ with tab_dashboard:
     _has_filtered = any("_filtered_" in lab for lab in ecomp_options)
     if ecomp_options and not _has_filtered:
         st.info(
-            "Run the filter pipeline in the **🧪 Filter** tab to see "
+            "Run the filter pipeline in the **Filter** tab to see "
             "filtered datasets alongside the raw ones here."
         )
 
     if not ecomp_options:
-        st.caption("Drop at least one .db file in the **🧪 Filter** tab to populate the dashboard.")
+        st.caption("Drop at least one .db file in the **Upload** tab to populate the dashboard.")
     elif not picked_series:
         st.caption("Pick at least one dataset in the sidebar.")
     elif not _tiles:
