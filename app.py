@@ -31,7 +31,9 @@ import streamlit as st
 from pipelines.config import FilterFlags, Input, Params
 from pipelines.quick import generate_raw_jsons
 from pipelines.runner import run as run_pipeline
+from plots.atoms_weight import atom_count_distribution, weight_distribution
 from plots.ecomp_bar import bar_average_proportion
+from plots.element_dist import _available_elements, element_distribution
 
 
 st.set_page_config(page_title="Molecule Pipeline", layout="wide")
@@ -240,45 +242,116 @@ if st.session_state.last_filter_run is not None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Bar plot of average atom proportion (driven by ecomp.json files
-#    produced by the filter pipeline). Pick any subset of the JSONs the
-#    last run produced — raw + filtered for each DB — to overlay.
+# Shared across plot sections: {label: ecomp_json_path}.
+# Raw entries land here automatically after a file is dropped (Section 2
+# auto-gen); filtered entries show up after Section 3's Run button.
 # ---------------------------------------------------------------------------
-st.subheader("4. Average atom proportion (bar)")
-# Merge two sources: raw JSONs auto-generated on upload, and filtered JSONs
-# from the last filter run (if there was one). Raw entries are always
-# available; filtered entries require Section 3 to have been Run.
-options: dict[str, str] = {}
+ecomp_options: dict[str, str] = {}
 for combo, paths in st.session_state.raw_jsons.items():
     label = f"{combo[2]}_raw"   # combo[2] is the row's `name`
-    options[label] = str(paths["ecomp"])
+    ecomp_options[label] = str(paths["ecomp"])
 if st.session_state.last_filter_run is not None:
-    run_dir = Path(st.session_state.last_filter_run["output_dir"])
-    for p in sorted(run_dir.glob("*_filtered_*.ecomp.json")):
-        options[p.name.replace(".ecomp.json", "")] = str(p)
+    _run_dir = Path(st.session_state.last_filter_run["output_dir"])
+    for _p in sorted(_run_dir.glob("*_filtered_*.ecomp.json")):
+        ecomp_options[_p.name.replace(".ecomp.json", "")] = str(_p)
 
-if not options:
+
+def _download_fig(fig, filename: str, key: str) -> None:
+    """PNG download button for a matplotlib Figure. Avoids repeating code."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    st.download_button(
+        "Download PNG",
+        data=buf.getvalue(),
+        file_name=filename,
+        mime="image/png",
+        key=key,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4. Average atom proportion (bar)
+# ---------------------------------------------------------------------------
+st.subheader("4. Average atom proportion (bar)")
+if not ecomp_options:
     st.caption("Drop at least one .db file above to enable comparison.")
 else:
     picked = st.multiselect(
         "Datasets to compare",
-        options=list(options),
-        default=list(options),
+        options=list(ecomp_options),
+        default=list(ecomp_options),
         key="ecomp_bar_picked",
     )
     if st.button("Render bar plot", key="render_bar", disabled=not picked):
-        series = [(label, options[label]) for label in picked]
+        series = [(label, ecomp_options[label]) for label in picked]
         with st.spinner("Rendering…"):
             fig = bar_average_proportion(series)
         st.pyplot(fig)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        st.download_button(
-            "Download PNG",
-            data=buf.getvalue(),
-            file_name="ecomp_bar.png",
-            mime="image/png",
-            key="dl_ecomp_bar",
+        _download_fig(fig, "ecomp_bar.png", "dl_ecomp_bar")
+
+
+# ---------------------------------------------------------------------------
+# 5. Element distribution across datasets (histogram, optional KDE overlay)
+# ---------------------------------------------------------------------------
+st.subheader("5. Element distribution")
+if not ecomp_options:
+    st.caption("Drop at least one .db file above to enable comparison.")
+else:
+    picked_el = st.multiselect(
+        "Datasets to compare",
+        options=list(ecomp_options),
+        default=list(ecomp_options),
+        key="element_dist_picked",
+    )
+    series_el = [(label, ecomp_options[label]) for label in picked_el]
+    elements = _available_elements(series_el) if series_el else []
+    if not elements:
+        st.caption("Pick at least one dataset.")
+    else:
+        c1, c2 = st.columns([1, 2])
+        element = c1.selectbox("Element", elements, key="element_dist_sym")
+        style = c2.radio(
+            "Style", ["histogram", "histogram+kde"],
+            horizontal=True, key="element_dist_style",
         )
+        if st.button("Render element distribution", key="render_el"):
+            with st.spinner("Rendering…"):
+                fig = element_distribution(series_el, element, style=style)
+            st.pyplot(fig)
+            _download_fig(fig, f"element_dist_{element}.png", "dl_el")
+
+
+# ---------------------------------------------------------------------------
+# 6. Atom count + molecular weight distributions (KDE curves)
+# ---------------------------------------------------------------------------
+st.subheader("6. Atom count & molecular weight")
+if not ecomp_options:
+    st.caption("Drop at least one .db file above to enable comparison.")
+else:
+    picked_aw = st.multiselect(
+        "Datasets to compare",
+        options=list(ecomp_options),
+        default=list(ecomp_options),
+        key="atoms_weight_picked",
+    )
+    which = st.radio(
+        "Quantity",
+        ["Atom count", "Molecular weight", "Both"],
+        horizontal=True,
+        key="atoms_weight_which",
+    )
+    if st.button("Render", key="render_aw", disabled=not picked_aw):
+        series_aw = [(label, ecomp_options[label]) for label in picked_aw]
+        with st.spinner("Rendering…"):
+            if which in ("Atom count", "Both"):
+                fig_a = atom_count_distribution(series_aw)
+                st.markdown("**Atom count per molecule**")
+                st.pyplot(fig_a)
+                _download_fig(fig_a, "atom_count_kde.png", "dl_atom_count")
+            if which in ("Molecular weight", "Both"):
+                fig_w = weight_distribution(series_aw)
+                st.markdown("**Molecular weight (g/mol)**")
+                st.pyplot(fig_w)
+                _download_fig(fig_w, "molecular_weight_kde.png", "dl_weight")
 
 
